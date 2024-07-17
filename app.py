@@ -87,10 +87,11 @@ def process_receipt():
         )
         receipts[receipt.id] = receipt
         return jsonify({"id": receipt.id})
-    except KeyError as e:
-        raise BadRequest(f"Missing key: {e.args[0]}")
+    except BadRequest as e:
+        raise e
     except Exception as e:
         raise InternalServerError(str(e))
+
 
 @app.route('/receipts/<receipt_id>/points', methods=['GET'])
 def get_points(receipt_id):
