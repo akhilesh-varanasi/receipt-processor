@@ -3,6 +3,8 @@ from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 import uuid
 import math
 from datetime import datetime
+import re
+import traceback
 
 app = Flask(__name__)
 receipts = {}
@@ -19,40 +21,52 @@ class Receipt:
 
     def calculate_points(self):
         points = 0
-        # Rule 1: One point for every alphanumeric character in the retailer name.
         points += sum(c.isalnum() for c in self.retailer)
-
-        # Rule 2: 50 points if the total is a round dollar amount with no cents.
         total_float = float(self.total)
         if total_float == int(total_float):
             points += 50
-
-        # Rule 3: 25 points if the total is a multiple of 0.25.
         if total_float % 0.25 == 0:
             points += 25
-
-        # Rule 4: 5 points for every two items on the receipt.
         points += (len(self.items) // 2) * 5
-
-        # Rule 5: If the trimmed length of the item description is a multiple of 3,
-        # multiply the price by 0.2 and round up to the nearest integer.
         for item in self.items:
             trimmed_desc = item['shortDescription'].strip()
             if len(trimmed_desc) % 3 == 0:
                 price = float(item['price'])
                 points += math.ceil(price * 0.2)
-
-        # Rule 6: 6 points if the day in the purchase date is odd.
         purchase_date = datetime.strptime(self.purchase_date, '%Y-%m-%d')
         if purchase_date.day % 2 != 0:
             points += 6
-
-        # Rule 7: 10 points if the time of purchase is after 2:00pm and before 4:00pm.
         purchase_time = datetime.strptime(self.purchase_time, '%H:%M')
         if 14 <= purchase_time.hour < 16:
             points += 10
-
         return points
+
+def validate_receipt_data(data):
+    required_keys = ['retailer', 'purchaseDate', 'purchaseTime', 'items', 'total']
+    for key in required_keys:
+        if key not in data:
+            raise BadRequest(f"Missing key: {key}")
+    if not re.match(r"^[\w\s\-&]+$", data['retailer']):
+        raise BadRequest("Invalid retailer format")
+    try:
+        datetime.strptime(data['purchaseDate'], '%Y-%m-%d')
+    except ValueError:
+        raise BadRequest("Invalid purchaseDate format")
+    try:
+        datetime.strptime(data['purchaseTime'], '%H:%M')
+    except ValueError:
+        raise BadRequest("Invalid purchaseTime format")
+    if not isinstance(data['items'], list) or len(data['items']) < 1:
+        raise BadRequest("Items should be a non-empty array")
+    for item in data['items']:
+        if 'shortDescription' not in item or 'price' not in item:
+            raise BadRequest("Item is missing shortDescription or price")
+        if not re.match(r"^[\w\s\-]+$", item['shortDescription']):
+            raise BadRequest("Invalid item shortDescription format")
+        if not re.match(r"^\d+\.\d{2}$", item['price']):
+            raise BadRequest("Invalid item price format")
+    if not re.match(r"^\d+\.\d{2}$", data['total']):
+        raise BadRequest("Invalid total format")
 
 @app.errorhandler(BadRequest)
 def handle_bad_request(e):
@@ -68,17 +82,11 @@ def handle_internal_server_error(e):
 
 @app.route('/receipts/process', methods=['POST'])
 def process_receipt():
-    # process json into receipt object and generate unique id
     try:
         data = request.get_json()
         if not data:
             raise BadRequest("Invalid JSON format")
-        
-        required_keys = ['retailer', 'purchaseDate', 'purchaseTime', 'items', 'total']
-        for key in required_keys:
-            if key not in data:
-                raise BadRequest(f"Missing key: {key}")
-
+        validate_receipt_data(data)
         receipt = Receipt(
             retailer=data['retailer'],
             purchase_date=data['purchaseDate'],
@@ -87,23 +95,25 @@ def process_receipt():
             total=data['total']
         )
         receipts[receipt.id] = receipt
-        return jsonify({"id": receipt.id})
+        return jsonify({"id": receipt.id}), 200
     except BadRequest as e:
-        raise e
+        return handle_bad_request(e)
+    except NotFound as e:
+        return handle_not_found(e)
     except Exception as e:
-        raise InternalServerError(str(e))
-
+        return handle_internal_server_error(e)
 
 @app.route('/receipts/<receipt_id>/points', methods=['GET'])
 def get_points(receipt_id):
-    # find points for given receipt id
     try:
         receipt = receipts.get(receipt_id)
         if receipt is None:
             raise NotFound("Receipt not found")
-        return jsonify({"points": receipt.points})
+        return jsonify({"points": receipt.points}), 200
+    except NotFound as e:
+        return handle_not_found(e)
     except Exception as e:
-        raise InternalServerError(str(e))
+        return handle_internal_server_error(e)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
