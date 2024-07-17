@@ -68,6 +68,7 @@ def handle_internal_server_error(e):
 
 @app.route('/receipts/process', methods=['POST'])
 def process_receipt():
+    # process json into receipt object and generate unique id
     try:
         data = request.get_json()
         if not data:
@@ -95,6 +96,7 @@ def process_receipt():
 
 @app.route('/receipts/<receipt_id>/points', methods=['GET'])
 def get_points(receipt_id):
+    # find points for given receipt id
     try:
         receipt = receipts.get(receipt_id)
         if receipt is None:
