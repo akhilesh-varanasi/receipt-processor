@@ -75,17 +75,7 @@ python test_receipts.py morning-receipt.json
 
     **Process a receipt and get points:**
 
-    ```bash
-    # Process the receipt
-    response=$(curl -X POST http://localhost:8080/receipts/process -H "Content-Type: application/json" -d @examples/simple-receipt.json)
-    echo $response
-    id=$(echo $response | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
-
-    # Get points for the processed receipt
-    curl http://localhost:8080/receipts/$id/points
-    ```
-
-##### Example Commands
+##### Example Usage
 
 ```bash
 # Process the receipt
